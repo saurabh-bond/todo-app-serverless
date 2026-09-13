@@ -1,5 +1,7 @@
 import json
-import base64 
+import base64
+from decimal import Decimal
+
 
 def get_user_context(event: dict) -> dict:
     """Extract user information and roles from the API Gateway Authorizer context."""
@@ -15,6 +17,15 @@ def get_user_context(event: dict) -> dict:
             "email": None
         }
 
+
+def json_default(value):
+    if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
+
 def format_response(status_code: int, body: dict) -> dict:
     return {
         "statusCode": status_code,
@@ -24,5 +35,5 @@ def format_response(status_code: int, body: dict) -> dict:
             "Access-Control-Allow-Headers": "*",
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
         },
-        "body": json.dumps(body)
+        "body": json.dumps(body, default=json_default)
     }
