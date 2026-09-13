@@ -25,6 +25,10 @@ jobs:
               run: |
                 cd backend
                 sam build --use-container
+            - name: Ensure SAM deployment bucket exists
+              run: |
+                aws s3api head-bucket --bucket todo-app-sam-deployments-dev --region us-east-1 2>/dev/null || \
+                aws s3api create-bucket --bucket todo-app-sam-deployments-dev --region us-east-1
             - name: Deploy SAM Backend
               run: |
                 cd backend
