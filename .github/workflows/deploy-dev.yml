@@ -29,5 +29,3 @@ jobs:
               run: |
                 cd backend
                 sam deploy --config-env dev --no-fail-on-empty-changeset
-
-    
