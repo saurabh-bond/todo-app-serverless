@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Todo App Serverless Backend
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stage, prod]
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: python3.12
+    MemorySize: 128
+    Environment:
+      Variables:
+        ENV: !Ref Environment
+        TABLE_NAME: !GetAtt DatabaseStack.Outputs.TableName
+        USER_POOL_ID: !GetAtt AuthStack.Outputs.UserPoolId
+        USER_POOL_CLIENT_ID: !GetAtt AuthStack.Outputs.UserPoolClientId
+
+Resources:
+  DatabaseStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: infrastructure/database.yaml
+      Parameters:
+        Environment: !Ref Environment
+  
+  AuthStack:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: infrastructure/auth.yaml
+      Parameters:
+        Environment: !Ref Environment
+
+  CommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub todo-app-common-${Environment}
+      ContentUri: layers/common_layer/
+      CompatibleRuntimes:
+        - python3.12
+  
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Environment
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              audience:
+                - !GetAtt AuthStack.Outputs.UserPoolClientId
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${AuthStack.Outputs.UserPoolId}"
+      CorsConfiguration: 
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - "*"
+        AllowOrigins:
+          - "*"
+        MaxAge: 600
+  TodoAuthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/auth/
+      Handler: handler.lambda_handler
+      Layers: 
+        - !Ref CommonLayer
+      Policies: 
+        - Statement:
+          - Effect: Allow
+            Action:
+              - cognito-idp:SignUp
+              - cognito-idp:ConfirmSignUp
+              - cognito-idp:InitiateAuth
+              - cognito-idp:ForgotPassword
+              - cognito-idp:ConfirmForgotPassword
+            Resource: !GetAtt AuthStack.Outputs.UserPoolArn
+      Events:
+        AuthPostRoutes:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /auth/{proxy+}
+            Method: POST
+            Auth:
+              Authorizer: NONE
+  
+  TodoCRUDFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/todos/
+      Handler: handler.lambda_handler
+      Layers: 
+        - !Ref CommonLayer
+      Policies: 
+        - DynamoDBCrudPolicy:
+            TableName: !GetAtt DatabaseStack.Outputs.TableName
+      Events:
+        GetTodos:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /todos
+            Method: GET
+        CreateTodos:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /todos
+            Method: POST
+        DeleteTodos:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /todos/{todo_id}
+            Method: DELETE
+
+Outputs:
+  ApiEndpoint:
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+  UserPoolId:
+    Value: !GetAtt AuthStack.Outputs.UserPoolId
+  UserPoolClientId: 
+    Value: !GetAtt AuthStack.Outputs.UserPoolClientId
+
+

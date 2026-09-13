@@ -1,0 +1,32 @@
+name: Deploy to Dev
+on:
+    push:
+        branches:
+            - develop
+permissions: 
+    id-token: write
+    contents: read
+
+jobs:
+    deploy-backend:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with: 
+                python-version: '3.12'
+            - uses: aws-actions/setup-sam@v2
+            - uses: aws-actions/configure-aws-credentials@v4
+              with:
+                role-to-assume: ${{ secrets.AWS_ROLE_ARN_DEV }}
+                aws-region: us-east-1
+            - name: Build SAM Backend
+              run: |
+                cd backend
+                sam build --use-container
+            - name: Deploy SAM Backend
+              run: |
+                cd backend
+                sam deploy --config-env dev --no-fail-on-empty-changeset
+
+    
